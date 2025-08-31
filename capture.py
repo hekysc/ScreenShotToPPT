@@ -1,8 +1,5 @@
 import win32gui, win32ui, win32con,win32process
 from PIL import Image, ImageChops,ImageDraw,ImageFont,ImageStat
-from winrt.windows.graphics.capture import GraphicsCaptureItem
-from winrt.windows.graphics.capture import GraphicsCaptureSession
-from winrt.windows.graphics.capture import GraphicsCapturePicker
 
 def get_window_list():
     windows = []
@@ -101,8 +98,10 @@ def create_placeholder_image(size=(200,150),text="Fail",color=(200, 200, 200)):
     except:
         font = ImageFont.load_default()
 
-    text_size = draw.textsize(text, font=font)
-    position = ((size[0] - text_size[0]) // 2, (size[1] - text_size[1]) // 2)
+    # 用 textbbox 获取文字边框 (left, top, right, bottom)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    position = ((size[0] - text_w) // 2, (size[1] - text_h) // 2)
     draw.text(position, text, fill=(255,255,255), font=font)
     return img
 

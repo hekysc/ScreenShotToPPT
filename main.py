@@ -252,8 +252,8 @@ class MainApp(QWidget):
             else:
                 self.log_message("截图内容相似，未保存")
 
-        qt_img = ImageQt.ImageQt(img)
-        pixmap = QPixmap.fromImage(QImage(qt_img))
+        # qt_img = ImageQt.ImageQt(img)
+        pixmap = pil_image_to_qpixmap(img)
         self.preview.setPixmap(pixmap.scaled(400, 300, Qt.KeepAspectRatio,Qt.SmoothTransformation))
         # print("caputure:",type(img),"___pixmap：",type(pixmap))
 
