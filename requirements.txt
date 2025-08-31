@@ -1,0 +1,5 @@
+PyQt5
+pillow
+imagehash
+python-pptx
+pywin32
