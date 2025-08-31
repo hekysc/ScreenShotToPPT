@@ -16,11 +16,3 @@ Automatically copy screen periodically, even the window is not activatied.
 ```bash
 pip install -r requirements.txt
 python main.py
-
-WindowCapturePPT/
-├── main.py                  # 主程序入口，包含 UI 和逻辑控制
-├── capture.py              # 窗口截图与相似性判断逻辑
-├── ppt_generator.py        # 生成 PowerPoint 的模块
-├── utils.py                # 工具函数，如图像比较、路径处理等
-└── assets/
-    └── default.png         # 默认红色图片
