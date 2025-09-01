@@ -32,7 +32,8 @@ class MainApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("窗口截图与PPT生成器")
-        self.setWindowIcon(QIcon("icons/app_icon.png"))
+        # 使用项目内的自定义图标
+        self.setWindowIcon(QIcon("icon/icon.jpg"))
         self.setGeometry(100, 100, 400, 600)
 
         self.last_image = None
