@@ -59,8 +59,8 @@ class MainApp(QWidget):
         window_layout=QHBoxLayout(window_widget)
         window_layout.setContentsMargins(8, 8, 8, 8)
 
-        window_label=create_styled_label("截图窗口")
-        window_layout.addWidget(window_label)
+        self.window_label = create_styled_label("截图窗口(0)")
+        window_layout.addWidget(self.window_label)
 
         self.combo = QComboBox()
         self.img_manager = {}
@@ -128,12 +128,18 @@ class MainApp(QWidget):
         style_btn(self.start_btn)
         self.start_btn.clicked.connect(self.start_capture)
         scr_shot_layout.addWidget(self.start_btn,alignment=Qt.AlignLeft)
-        scr_shot_layout.setSpacing(20)  # 标签和按钮之间 8px 间距
+
+        scr_shot_layout.setSpacing(20)
 
         self.stop_btn = QPushButton("停止截图")
         style_btn(self.stop_btn,bg_color="#EC4630")
         self.stop_btn.clicked.connect(self.stop_capture)
         scr_shot_layout.addWidget(self.stop_btn,alignment=Qt.AlignLeft)
+
+        # 实时有效截图数量标签（显示在“停止截图”右侧）
+        self.capture_count_label = create_styled_info("有效截图: 0")
+        self.capture_count_label.setMinimumWidth(120)
+        scr_shot_layout.addWidget(self.capture_count_label, alignment=Qt.AlignLeft)
 
         # ppt按钮
         ppt_widget=QWidget()
@@ -218,6 +224,12 @@ class MainApp(QWidget):
 
         # 按 flag 排序（成功在前，失败在后）
         self.refresh_combo(sort_index=3, reverse=False)
+        # 更新“截图窗口(数量)”
+        try:
+            count = self.combo.count()
+            self.window_label.setText(f"截图窗口({count})")
+        except Exception:
+            pass
 
     def log_message(self, msg):
         timestamp = time.strftime("%H:%M:%S")
@@ -247,6 +259,7 @@ class MainApp(QWidget):
             self.log_message("请先选择截图保存文件夹")
             return
         self.capture_count = 0
+        self.update_capture_count_label()
         self.start_time = time.time()
         self.last_image = None
         self.timer.start(self.interval_spin.value() * 1000)
@@ -272,6 +285,7 @@ class MainApp(QWidget):
         else:
             if self.last_image is None or is_different(self.last_image, img):
                 self.capture_count += 1
+                self.update_capture_count_label()
                 title = title.strip().replace(" ", "_").replace(":", "_")
                 safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -285,6 +299,12 @@ class MainApp(QWidget):
 
         pixmap = pil_image_to_qpixmap(img)
         self.preview.setPixmap(pixmap.scaled(400, 300, Qt.KeepAspectRatio,Qt.SmoothTransformation))
+
+    def update_capture_count_label(self):
+        try:
+            self.capture_count_label.setText(f"有效截图: {self.capture_count}")
+        except Exception:
+            pass
 
     def generate_ppt(self):
         folder = self.capture_folder
