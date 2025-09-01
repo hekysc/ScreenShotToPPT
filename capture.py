@@ -1,4 +1,4 @@
-import win32gui, win32ui, win32con,win32process
+import win32gui, win32ui, win32con
 from PIL import Image, ImageChops,ImageDraw,ImageFont,ImageStat
 
 def get_window_list():

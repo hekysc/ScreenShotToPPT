@@ -1,9 +1,10 @@
 import sys, os, time
+
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QFileDialog, QComboBox, QTextEdit, QSpinBox, QListView
 )
-from PyQt5.QtCore import Qt, QTimer, QPoint
+from PyQt5.QtCore import Qt, QTimer, QPoint, QSettings
 from PyQt5.QtGui import QIcon
 from capture import (
     get_window_list, capture_window, 
@@ -33,13 +34,19 @@ class MainApp(QWidget):
         self.setGeometry(100, 100, 400, 600)
 
         self.last_image = None
-        self.capture_folder = "..\\test"
+        self.capture_folder = sys.path[0]
         self.capture_count = 0
         self.start_time = None
         self.timer = QTimer()
         self.timer.timeout.connect(self.capture_loop)
 
+        # 新增：应用设置对象（组织名、应用名可自定义）
+        self.settings = QSettings("my", "ScreenShotToPPT")
+
         self.init_ui()
+
+        # 新增：加载保存过的参数
+        self.load_settings()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -88,6 +95,7 @@ class MainApp(QWidget):
         self.interval_spin = QSpinBox()
         self.interval_spin.setRange(1, 60)
         self.interval_spin.setValue(5)
+        self.interval_spin.valueChanged.connect(lambda _: self.save_settings())
         style_input_widget(self.interval_spin)
         interval_layout.addWidget(self.interval_spin)
 
@@ -218,6 +226,8 @@ class MainApp(QWidget):
             self.capture_folder = folder
             self.folder_path_info.setText(folder)
             self.log_message(f"截图将保存到: {folder}")
+        # 新增：立刻保存
+        self.save_settings()
 
     def start_capture(self):
         if not self.capture_folder:
@@ -317,6 +327,37 @@ class MainApp(QWidget):
         for icon,text, data in items_data:
             self.combo.addItem(icon,text, data)
 
+    def save_settings(self):
+        """保存上次参数：截图路径、间隔秒数"""
+        try:
+            self.settings.setValue("capture_folder", self.capture_folder)
+            self.settings.setValue("interval_seconds", int(self.interval_spin.value()))
+            self.settings.sync()  # 立即落盘
+        except Exception as e:
+            self.log_message(f"保存设置失败: {e}")
+
+    def load_settings(self):
+        """加载上次参数（若不存在则保持默认值）"""
+        try:
+            folder = self.settings.value("capture_folder", type=str)
+            if folder and os.path.isdir(folder):
+                self.capture_folder = folder
+                self.folder_path_info.setText(folder)
+
+            interval = self.settings.value("interval_seconds", type=int)
+            if interval and 1 <= interval <= 60:
+                self.interval_spin.setValue(interval)
+
+            # 同步 UI（如果 load 比 init_ui 晚执行）
+            # 已经在上面 setText/setValue 处理，无需额外操作
+        except Exception as e:
+            self.log_message(f"加载设置失败: {e}")
+
+    def closeEvent(self, event):
+        # 退出前保存一次
+        self.save_settings()
+        super().closeEvent(event)
+
 # 悬浮显示鼠标响应类
 class HoverListView(QListView):
     # def __init__(self, img_manager, preview_label):
@@ -335,6 +376,8 @@ class HoverListView(QListView):
                 pixmap = self.img_manager.get(title)[4]
                 if pixmap:
                     self.preview_widget.update_content(title, pixmap)
+                    # Ensure widget size matches content before moving
+                    self.preview_widget.adjustSize()
                     global_pos = self.viewport().mapToGlobal(event.pos())
                     self.preview_widget.move(global_pos + QPoint(20, 20))
                     self.preview_widget.show()
@@ -390,8 +433,12 @@ class HoverPreview(QWidget):
         self.hide()
 
     def update_content(self, title: str, pixmap):
+        # Update labels then adjust to content so geometry matches size hints
         self.title_label.setText(title)
         self.image_label.setPixmap(pixmap)
+        self.title_label.adjustSize()
+        self.image_label.adjustSize()
+        self.adjustSize()
 
 ctypes.windll.user32.SetProcessDPIAware()
 
