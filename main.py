@@ -1,24 +1,29 @@
 import sys, os, time
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QComboBox, QTextEdit, QSpinBox, QListView,QScrollArea,QGridLayout
+    QFileDialog, QComboBox, QTextEdit, QSpinBox, QListView
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QPixmap, QImage,QIcon
+from PyQt5.QtGui import QIcon
 from capture import (
     get_window_list, capture_window, 
-    is_different,create_placeholder_image,get_window_list_new,is_image_black
+    is_different,create_placeholder_image,is_image_black
 )
 from ppt_generator import generate_ppt
+from img_convertor import (
+    hoverview_img_generator,
+    preview_img_generator,
+    iconview_img_generator,
+    pil_image_to_qpixmap
+)
 from ui_style import (
     create_styled_label,style_input_widget,
     create_styled_info,style_btn,
     style_preview_widget
 )
-from PIL import Image, ImageQt
+from PIL import Image
 import ctypes
 import re
-from io import BytesIO
 
 class MainApp(QWidget):
     def __init__(self):
@@ -48,58 +53,26 @@ class MainApp(QWidget):
         window_layout.addWidget(window_label)
 
         self.combo = QComboBox()
-        self.window_map = {}
-
-        self.thumb_manager = SafeThumbnailManager()
-        # self.succeed_thumb=SafeThumbnailManager()
-        # self.failed_thumb=SafeThumbnailManager()
-
-        for title, hwnd in get_window_list():
-            # print(title)
-            img = capture_window(hwnd)
-            if img and img.width > 30 and img.height > 30 and not is_image_black(img):
-                img=img
-                status_flag="succeed"
-                # self.succeed_thumb.add(title,img)
-                # self.thumb_manager.add(title, img)
-                # self.add_window_item(title, hwnd, img)
-                # self.window_map[title] = hwnd
-            # 情况 2: 截图为 None 或尺寸过小
-            elif img is None or img.width <= 30 or img.height <= 30:
-                # print(f"[无法截图] {title}")
-                placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
-                # self.failed_thumb.add(title,img)
-                # self.thumb_manager.add(title, placeholder)
-                # self.add_window_item(title, hwnd, placeholder)
-                # self.window_map[title] = hwnd
-                # 情况 3: 全黑图
-            elif is_image_black(img):
-                placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
-                # self.failed_thumb.add(title,img)
-                # self.thumb_manager.add(title, placeholder)
-                # self.add_window_item(title, hwnd, placeholder)
-                # self.window_map[title] = hwnd
-            self.thumb_manager.add(title, img)
-            # self.thumb_manager=self.succeed_thumb+self.failed_thumb
-            self.add_window_item(title, hwnd, img,status_flag)
-            self.window_map[title] = hwnd
-
-        # 按 flag 排序（成功在前，失败在后）
-        self.refresh_combo(sort_index=3, reverse=False)
+        self.img_manager = {}
+        self.get_combo_list()
 
         style_input_widget(self.combo)
         window_layout.addWidget(self.combo)
 
-        # 预览窗口（空白）
+        # 刷新窗口按钮
+        self.widow_refresh_btn = QPushButton("刷新")
+        style_btn(self.widow_refresh_btn)
+        self.widow_refresh_btn.setToolTip("选择保存文件夹")
+        self.widow_refresh_btn.setFixedWidth(28)
+        self.widow_refresh_btn.clicked.connect(self.refresh_window_list)
+        window_layout.addWidget(self.widow_refresh_btn,alignment=Qt.AlignCenter)
+
+        # 建立预览窗口（空白）
         self.hover_preview = HoverPreview()
         style_preview_widget(self.hover_preview)
 
-        # 列表窗口填充
-        hover_view = HoverListView(self.thumb_manager, self.hover_preview)
+        # 将icon和title填入列表窗口
+        hover_view = HoverListView(self.img_manager, self.hover_preview)
         self.combo.setView(hover_view)
 
         # 截图间隔-创建容器
@@ -118,23 +91,23 @@ class MainApp(QWidget):
         style_input_widget(self.interval_spin)
         interval_layout.addWidget(self.interval_spin)
 
-        # 文件夹选择
+        # 文件夹选择容器
         folder_widget=QWidget()
         folder_layout = QHBoxLayout(folder_widget)
         
+        # 标签
         folder_label=create_styled_label("截图保存文件夹")
         folder_layout.addWidget(folder_label)
-        
+
+        self.folder_path_info=create_styled_info(self.capture_folder)
+        folder_layout.addWidget(self.folder_path_info)
+
         self.folder_btn = QPushButton("...")
         style_btn(self.folder_btn)
         self.folder_btn.setToolTip("选择保存文件夹")
         self.folder_btn.setFixedWidth(28)
         self.folder_btn.clicked.connect(self.select_folder)
         folder_layout.addWidget(self.folder_btn)
-
-        self.folder_path_info=create_styled_info(self.capture_folder)
-        # self.folder_path_label.setStyleSheet("color: gray; font-size: 10pt;")
-        folder_layout.addWidget(self.folder_path_info)
 
         # 控制按钮
         scr_shot_widget=QWidget()
@@ -160,13 +133,7 @@ class MainApp(QWidget):
         self.ppt_btn.clicked.connect(self.generate_ppt)
         ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignLeft)
 
-        # 日志输出
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        self.log.append(f"共发现窗口数: {len(self.window_map)}")
-        # print(self.window_map)
-
-        # 图片预览
+        # 建立预览窗口
         self.preview = QLabel("截图预览")
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setFixedHeight(300)
@@ -177,12 +144,15 @@ class MainApp(QWidget):
             color: #888;
         """)
 
+        # 日志输出
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.append(f"共发现窗口数: {len(self.img_manager)}")
+
         layout.addWidget(window_widget)
         layout.addWidget(interval_widget)
         layout.addWidget(folder_widget)
-        # layout.addWidget(self.folder_btn)
         layout.addWidget(scr_shot_widget)
-        # layout.addWidget(self.stop_btn)
         layout.addWidget(ppt_widget)
         layout.addWidget(self.preview)
         layout.addWidget(QLabel("执行日志:"))
@@ -192,21 +162,59 @@ class MainApp(QWidget):
 
         self.setLayout(layout)
             
-    def add_window_item(self,title: str, hwnd, image, flag):
+    def get_combo_list(self):
+        self.combo.clear()
+        self.img_manager.clear()
 
-        # qt_img = ImageQt.ImageQt(image.resize((64, 48)))  # 缩略图尺寸
-        # pixmap = QPixmap.fromImage(QImage(qt_img))
-        pixmap=pil_image_to_qpixmap(image.resize((64, 48)))
-        icon = QIcon(pixmap)
-        self.combo.addItem(icon, title,flag)
+        for title, hwnd in get_window_list():
+            img = capture_window(hwnd)
+            # 情况 1: 截图正常
+            if img and img.width > 30 and img.height > 30 and not is_image_black(img):
+                img=img
+                status_flag="succeed"
+            
+            # 情况 2: 截图为 None 或尺寸过小
+            elif img is None or img.width <= 30 or img.height <= 30:
+                placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
+                img=placeholder
+                status_flag="fail"
+
+            # 情况 3: 全黑图
+            elif is_image_black(img):
+                placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
+                img=placeholder
+                status_flag="fail"
+
+            hoverview_img=hoverview_img_generator(img)
+            preview_img=preview_img_generator(img)
+            iconview_img=iconview_img_generator(img)
+
+            self.img_manager[title] = [
+                title, hwnd, img, preview_img, hoverview_img,  
+                iconview_img, status_flag
+                ]
+            self.combo.addItem(iconview_img, title,status_flag)
+
+        # 按 flag 排序（成功在前，失败在后）
+        self.refresh_combo(sort_index=3, reverse=False)
 
     def log_message(self, msg):
         timestamp = time.strftime("%H:%M:%S")
         self.log.append(f"[{timestamp}] {msg}")
 
+    def refresh_window_list(self):
+        self.get_combo_list()
+        hover_view = HoverListView(self.img_manager, self.hover_preview)
+        self.combo.setView(hover_view)
+        self.log_message(f"已刷新窗口列表")
+
     def select_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "选择截图保存文件夹")
-        if folder:
+        dialog = QFileDialog(self)
+        dialog.setFileMode(QFileDialog.Directory)
+        dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        dialog.setWindowTitle("选择截图保存文件夹")
+        if dialog.exec_():
+            folder = dialog.selectedFiles()[0]
             self.capture_folder = folder
             self.folder_path_info.setText(folder)
             self.log_message(f"截图将保存到: {folder}")
@@ -232,7 +240,7 @@ class MainApp(QWidget):
 
     def capture_loop(self):
         title = self.combo.currentText()
-        hwnd = self.window_map.get(title)
+        hwnd = self.img_manager[title][1]
         img = capture_window(hwnd)
 
         if img is None or img.size[0] < 30 or img.size[1] < 30:
@@ -241,7 +249,7 @@ class MainApp(QWidget):
         else:
             if self.last_image is None or is_different(self.last_image, img):
                 self.capture_count += 1
-                title = self.combo.currentText().strip().replace(" ", "_").replace(":", "_")
+                title = title.strip().replace(" ", "_").replace(":", "_")
                 safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 filename = f"{safe_title}_{timestamp}.png"
@@ -252,10 +260,8 @@ class MainApp(QWidget):
             else:
                 self.log_message("截图内容相似，未保存")
 
-        # qt_img = ImageQt.ImageQt(img)
         pixmap = pil_image_to_qpixmap(img)
         self.preview.setPixmap(pixmap.scaled(400, 300, Qt.KeepAspectRatio,Qt.SmoothTransformation))
-        # print("caputure:",type(img),"___pixmap：",type(pixmap))
 
     def generate_ppt(self):
         folder = self.capture_folder
@@ -298,24 +304,25 @@ class MainApp(QWidget):
         # 1. 取出所有条目的 (text, userData) 二元组
         items_data = []
         for i in range(self.combo.count()):
+            icon=self.combo.itemIcon(i)
             text = self.combo.itemText(i)
-            data = self.combo.itemData(i)  # (title, hwnd, image, flag)
-            items_data.append((text, data))
+            data = self.combo.itemData(i)  # (title, hwnd, image多个, flag)
+            items_data.append((icon,text, data))
 
         # 2. 按指定字段排序
-        items_data.sort(key=lambda item: item[1][sort_index], reverse=reverse)
+        items_data.sort(key=lambda item: item[2][sort_index], reverse=reverse)
 
         # 3. 重建 QComboBox
         self.combo.clear()
-        for text, data in items_data:
-            self.combo.addItem(text, data)
+        for icon,text, data in items_data:
+            self.combo.addItem(icon,text, data)
 
-# 悬浮显示
+# 悬浮显示鼠标响应类
 class HoverListView(QListView):
-    # def __init__(self, thumb_manager, preview_label):
-    def __init__(self, thumb_manager, preview_widget):
+    # def __init__(self, img_manager, preview_label):
+    def __init__(self, img_manager, preview_widget):
         super().__init__()
-        self.thumb_manager = thumb_manager
+        self.img_manager = img_manager
         # self.preview_label = preview_label
         self.preview_widget=preview_widget
         self.setMouseTracking(True)
@@ -325,81 +332,31 @@ class HoverListView(QListView):
             index = self.indexAt(event.pos())
             if index.isValid():
                 title = index.data()
-                # pixmap = self.thumb_map.get(title)
-                pixmap = self.thumb_manager.get(title)
-                # safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-                # pixmap.save(f"{safe_title}.png")
-                # print("thumb_mamager.get:",type(pixmap))
+                pixmap = self.img_manager.get(title)[4]
                 if pixmap:
                     self.preview_widget.update_content(title, pixmap)
-                    # safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-                    # pixmap.save(f"{safe_title}.png")
                     global_pos = self.viewport().mapToGlobal(event.pos())
                     self.preview_widget.move(global_pos + QPoint(20, 20))
                     self.preview_widget.show()
                 else:
-                    # self.preview_label.hide()
                     self.preview_widget.hide()
             else:
-                # self.preview_label.hide()
                 self.preview_widget.hide()
         except Exception as e:
             print("悬浮预览失败:", e)
-            # self.preview_label.hide()
             self.preview_widget.hide()
 
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
-        # self.preview_label.hide()
         self.preview_widget.hide()
         super().leaveEvent(event)
 
-class SafeThumbnailManager:
-    def __init__(self, size=(200, 150)):
-        self.size = size
-        self.pixmap_cache = {}  # title -> QPixmap
-
-    def add(self, title: str, pil_image: Image.Image):
-        try:
-            if pil_image and pil_image.size[0] > 30 and pil_image.size[1] > 30:
-                # print(title)
-                # img = pil_image.convert("RGB")  # 避免透明通道问题
-                img = pil_image
-                thumbnail = img.resize(self.size)
-                pixmap = pil_image_to_qpixmap(thumbnail)
-                # qt_img = ImageQt.ImageQt(thumbnail)
-                # pixmap = QPixmap.fromImage(QImage(qt_img)) # ⚠️ 可能不稳定
-                # safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-                # pixmap.save(f"{safe_title}.png")
-                # self.pixmap_cache[title] = pixmap
-                if pixmap:
-                    self.pixmap_cache[title] = pixmap
-                else:
-                    print(f"[缩略图转换失败] {title}")
-                # safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-                # self.pixmap_cache[title].save(f"{safe_title}.png")
-        except Exception as e:
-            print(f"[缩略图处理失败] {title}: {e}")
-
-    def get(self, title: str):
-        # print("get:",type(self.pixmap_cache))
-        # safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-        # self.pixmap_cache.get(title).save(f"{safe_title}.png")
-        return self.pixmap_cache[title]
-        # return self.pixmap_cache[title]
-
-    def has(self, title: str):
-        return title in self.pixmap_cache
-    
-    def get_status(self, title: str):
-        return title in self.pixmap_cache
-
+# 空白悬浮窗口类，允许更新显示内容
 class HoverPreview(QWidget):
     def __init__(self, width=200, height=150):
         super().__init__()
         self.setWindowFlags(Qt.ToolTip)
-        # self.setAttribute(Qt.WA_TranslucentBackground)
 
         self.title_label = QLabel()
         self.title_label.setWordWrap(True)
@@ -414,7 +371,6 @@ class HoverPreview(QWidget):
         # """)
 
         self.image_label = QLabel()
-        # self.image_label.setFixedSize(width, height)
         self.image_label.setAlignment(Qt.AlignCenter)
         # self.image_label.setStyleSheet("""
         #     QLabel {
@@ -435,21 +391,7 @@ class HoverPreview(QWidget):
 
     def update_content(self, title: str, pixmap):
         self.title_label.setText(title)
-        # qt_img = ImageQt.ImageQt(pixmap)
-        # pixmap = QPixmap.fromImage(QImage(qt_img))
         self.image_label.setPixmap(pixmap)
-        # print("update_content:",type(pixmap))
-
-def pil_image_to_qpixmap(pil_img: Image.Image) -> QPixmap:
-    try:
-        pil_img = pil_img.convert("RGB")  # 强制 RGB，避免透明通道
-        buffer = BytesIO()
-        pil_img.save(buffer, format="PNG")
-        qt_img = QImage.fromData(buffer.getvalue())
-        return QPixmap.fromImage(qt_img)
-    except Exception as e:
-        print("图像转换失败:", e)
-        return None
 
 ctypes.windll.user32.SetProcessDPIAware()
 
