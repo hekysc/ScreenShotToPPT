@@ -1,5 +1,5 @@
 import sys, os, time
-
+import getpass
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
     QFileDialog, QComboBox, QTextEdit, QSpinBox, QListView
@@ -41,7 +41,8 @@ class MainApp(QWidget):
         self.timer.timeout.connect(self.capture_loop)
 
         # 新增：应用设置对象（组织名、应用名可自定义）
-        self.settings = QSettings("my", "ScreenShotToPPT")
+        username = re.sub(r'[^A-Za-z0-9_-]', '_', getpass.getuser())
+        self.settings = QSettings(username, "ScreenShotToPPT")
 
         self.init_ui()
 
@@ -72,7 +73,7 @@ class MainApp(QWidget):
         self.widow_refresh_btn.setToolTip("选择保存文件夹")
         self.widow_refresh_btn.setFixedWidth(28)
         self.widow_refresh_btn.clicked.connect(self.refresh_window_list)
-        window_layout.addWidget(self.widow_refresh_btn,alignment=Qt.AlignCenter)
+        window_layout.addWidget(self.widow_refresh_btn)
 
         # 建立预览窗口（空白）
         self.hover_preview = HoverPreview()
