@@ -1,11 +1,13 @@
-import sys, os, time
+import sys, os, time, subprocess
+import urllib.parse
+from html import escape
 import getpass
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QComboBox, QTextEdit, QSpinBox, QListView
+    QFileDialog, QComboBox, QTextBrowser, QSpinBox, QListView
 )
-from PyQt5.QtCore import Qt, QTimer, QPoint, QSettings
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt, QTimer, QPoint, QSettings, QUrl
+from PyQt5.QtGui import QIcon, QDesktopServices
 from capture import (
     get_window_list, capture_window, 
     is_different,create_placeholder_image,is_image_black
@@ -142,6 +144,14 @@ class MainApp(QWidget):
         self.ppt_btn.clicked.connect(self.generate_ppt)
         ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignLeft)
 
+        # 生成结果展示（按钮下方显示路径 + 可点击链接）
+        self.ppt_result_info = create_styled_info("")
+        self.ppt_result_info.setTextFormat(Qt.RichText)
+        # Use custom handler to support both file:// open and reveal action
+        self.ppt_result_info.setOpenExternalLinks(False)
+        self.ppt_result_info.linkActivated.connect(self.on_ppt_link_activated)
+        self.ppt_result_info.hide()
+
         # 建立预览窗口
         self.preview = QLabel("截图预览")
         self.preview.setAlignment(Qt.AlignCenter)
@@ -153,8 +163,9 @@ class MainApp(QWidget):
             color: #888;
         """)
 
-        # 日志输出
-        self.log = QTextEdit()
+        # 日志输出（支持可点击链接）
+        self.log = QTextBrowser()
+        self.log.setOpenExternalLinks(True)
         self.log.setReadOnly(True)
         self.log.append(f"共发现窗口数: {len(self.img_manager)}")
 
@@ -163,6 +174,7 @@ class MainApp(QWidget):
         layout.addWidget(folder_widget)
         layout.addWidget(scr_shot_widget)
         layout.addWidget(ppt_widget)
+        layout.addWidget(self.ppt_result_info)
         layout.addWidget(self.preview)
         layout.addWidget(QLabel("执行日志:"))
         layout.addWidget(self.log)
@@ -302,8 +314,46 @@ class MainApp(QWidget):
         try:
             generate_ppt(folder, files, path)
             self.log_message(f"PPT已保存到: {path}")
+            # 在按钮下方显示保存路径与可点击链接
+            file_url = QUrl.fromLocalFile(path).toString()  # percent-encoded
+            file_name = os.path.basename(path)
+            folder = os.path.dirname(path)
+            folder_url = QUrl.fromLocalFile(folder).toString()
+            # Escape visible texts to avoid HTML issues
+            file_name_html = escape(file_name)
+            folder_html = escape(folder)
+            # Names themselves are clickable links
+            self.ppt_result_info.setText(
+                f"文件: <a href=\"{file_url}\"><b>{file_name_html}</b></a><br>"
+                f"文件夹: <a href=\"{folder_url}\">{folder_html}</a>"
+            )
+            self.ppt_result_info.show()
         except Exception as e:
             self.log_message(f"PPT生成失败: {e}")
+
+    def on_ppt_link_activated(self, url: str):
+        try:
+            if url.startswith("reveal:"):
+                # Percent-decoded path from custom link
+                file_path = urllib.parse.unquote(url[len("reveal:"):])
+                self.reveal_in_explorer(file_path)
+            else:
+                QDesktopServices.openUrl(QUrl(url))
+        except Exception as e:
+            self.log_message(f"打开链接失败: {e}")
+
+    def reveal_in_explorer(self, path: str):
+        try:
+            if not os.path.exists(path):
+                self.log_message("文件不存在，无法在资源管理器中显示")
+                return
+            # Normalize to absolute Windows path with backslashes
+            abs_path = os.path.abspath(os.path.normpath(path))
+            # Use explorer with /select, and proper quoting via shell
+            cmd = f'explorer /select,"{abs_path}"'
+            subprocess.Popen(cmd, shell=True)
+        except Exception as e:
+            self.log_message(f"在资源管理器中显示失败: {e}")
 
     def refresh_combo(self, sort_index=3, reverse=False):
         """
