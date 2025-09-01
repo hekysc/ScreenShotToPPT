@@ -25,7 +25,7 @@
 pip install -r requirements.txt
 ```
 
-依赖列表：`PyQt5`, `pillow`, `imagehash`, `python-pptx`, `pywin32`。
+依赖列表：`PyQt5`, `Pillow`, `python-pptx`, `pywin32`。
 
 ## 运行
 
@@ -85,4 +85,3 @@ pyinstaller -F -w -i icon/icon.ico main.py
 ## 许可
 
 本仓库未附带开源许可协议，如需开源或二次分发，请先添加合适的 License。
-
