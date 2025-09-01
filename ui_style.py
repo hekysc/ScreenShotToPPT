@@ -97,8 +97,11 @@ def style_btn(btn: QPushButton,
             border: none;
             border-radius: 5px;
             padding: 6px 12px;
+            padding-left: 0px;
+            padding-right: 0px;
             font-size: {font_size}pt;
             font-weight: bold;
+            text-align: center;
             /* 渐变实现立体感 */
             background-image: linear-gradient(to bottom, lighten({bg_color}, 15%), {bg_color});
         }}
