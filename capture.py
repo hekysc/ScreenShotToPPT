@@ -9,45 +9,6 @@ def get_window_list():
     win32gui.EnumWindows(callback, None)
     return windows
 
-def get_window_list_new():
-    windows = []
-
-    def callback(hwnd, extra):
-        # # 排除不可见窗口、最小化窗口、无标题窗口
-        # if not win32gui.IsWindowVisible(hwnd):
-        #     return
-        # if win32gui.IsIconic(hwnd):  # 最小化
-        #     return
-
-        title = win32gui.GetWindowText(hwnd)
-        if not title.strip():
-            return
-
-        # 获取窗口类名（可用于识别 VS Code、Chrome 等）
-        class_name = win32gui.GetClassName(hwnd)
-
-        # 获取进程 ID 和名称（可选）
-        try:
-            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        except:
-            pid = None
-
-        # 可选：排除某些系统窗口
-        # if class_name in ["Shell_TrayWnd", "Progman"]:
-        #     return
-
-        # windows.append({
-        #     "title": title,
-        #     "hwnd": hwnd
-        #     # "class": class_name,
-        #     # "pid": pid
-        # })
-
-        windows.append((title,hwnd))
-
-    win32gui.EnumWindows(callback, None)
-    return windows
-
 def capture_window(hwnd):
     try:
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
@@ -98,7 +59,6 @@ def create_placeholder_image(size=(200,150),text="Fail",color=(200, 200, 200)):
     except:
         font = ImageFont.load_default()
 
-    # 用 textbbox 获取文字边框 (left, top, right, bottom)
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     position = ((size[0] - text_w) // 2, (size[1] - text_h) // 2)
