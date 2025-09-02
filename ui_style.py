@@ -39,6 +39,30 @@ def create_styled_info(text: str, min_width: int = 150) -> QLabel:
         label.setMinimumWidth(min_width)
     return label
 
+# def create_styled_info(text: str, min_width: int = 150) -> QTextEdit:
+    # text_edit = QTextEdit(text)
+    # text_edit.setStyleSheet("""
+        # QTextEdit {
+            # color: gray;
+            # font-weight: bold;
+            # font-size: 10pt;
+            # padding: 4px 6px 4px 4px;
+            # border: 1px solid #aaa;
+            # background-color: white;
+            # border-radius: 4px;
+        # }
+    # """)
+    # text_edit.setReadOnly(True)
+    # text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
+    # text_edit.setWordWrapMode(2)  # 2 表示自动换行
+    # text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    # text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    # if min_width:
+        # text_edit.setMinimumWidth(min_width)
+
+    # return text_edit
+
 def style_preview_label(label: QLabel, width=200, height=150):
     label.setWindowFlags(Qt.ToolTip)
     label.setFixedSize(width, height)
