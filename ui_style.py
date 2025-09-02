@@ -1,5 +1,6 @@
 from PyQt5.QtWidgets import QLabel
 from PyQt5.QtWidgets import QPushButton
+from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtCore import Qt
 
 def create_styled_label(text: str, width: int = 120) -> QLabel:
@@ -28,10 +29,39 @@ def create_styled_info(text: str, min_width: int = 150) -> QLabel:
 
         }
     """)
-    label.setWordWrap(True)  # ✅ 自动换行
+    # 自动换行 + 自动高度
+    label.setWordWrap(True)
+    label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+    label.setMinimumHeight(0)
+    # 允许选择复制文本（并保留链接点击能力）
+    label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
     if min_width:
         label.setMinimumWidth(min_width)
     return label
+
+# def create_styled_info(text: str, min_width: int = 150) -> QTextEdit:
+    # text_edit = QTextEdit(text)
+    # text_edit.setStyleSheet("""
+        # QTextEdit {
+            # color: gray;
+            # font-weight: bold;
+            # font-size: 10pt;
+            # padding: 4px 6px 4px 4px;
+            # border: 1px solid #aaa;
+            # background-color: white;
+            # border-radius: 4px;
+        # }
+    # """)
+    # text_edit.setReadOnly(True)
+    # text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
+    # text_edit.setWordWrapMode(2)  # 2 表示自动换行
+    # text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    # text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+    # if min_width:
+        # text_edit.setMinimumWidth(min_width)
+
+    # return text_edit
 
 def style_preview_label(label: QLabel, width=200, height=150):
     label.setWindowFlags(Qt.ToolTip)
@@ -97,8 +127,11 @@ def style_btn(btn: QPushButton,
             border: none;
             border-radius: 5px;
             padding: 6px 12px;
+            padding-left: 0px;
+            padding-right: 0px;
             font-size: {font_size}pt;
             font-weight: bold;
+            text-align: center;
             /* 渐变实现立体感 */
             background-image: linear-gradient(to bottom, lighten({bg_color}, 15%), {bg_color});
         }}
