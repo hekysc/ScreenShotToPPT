@@ -47,10 +47,18 @@ class MainApp(QWidget):
         username = re.sub(r'[^A-Za-z0-9_-]', '_', getpass.getuser())
         # self.settings = QSettings(username, "ScreenShotToPPT")
 
-        config_file_path="CONFIG.ini"
-        self.settings=QSettings(config_file_path,QSettings.IniFormat)
+        # 获取用户主目录
+        user_home = os.path.expanduser("~")
 
+        # 构建 .ScreenShotToPPT 目录路径
+        config_dir = os.path.join(user_home, ".ScreenShotToPPT")
 
+        # 构建 CONFIG.ini 文件路径
+        config_file = os.path.join(config_dir, "CONFIG.ini")
+        # config_file_path="CONFIG.ini"
+
+        self.settings=QSettings(config_file,QSettings.IniFormat)
+        
         self.init_ui()
 
         # 新增：加载保存过的参数
