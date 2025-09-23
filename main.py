@@ -45,7 +45,11 @@ class MainApp(QWidget):
 
         # 新增：应用设置对象（组织名、应用名可自定义）
         username = re.sub(r'[^A-Za-z0-9_-]', '_', getpass.getuser())
-        self.settings = QSettings(username, "ScreenShotToPPT")
+        # self.settings = QSettings(username, "ScreenShotToPPT")
+
+        config_file_path="CONFIG.ini"
+        self.settings=QSettings(config_file_path,QSettings.IniFormat)
+
 
         self.init_ui()
 
@@ -247,6 +251,7 @@ class MainApp(QWidget):
         dialog.setFileMode(QFileDialog.Directory)
         dialog.setOption(QFileDialog.ShowDirsOnly, True)
         dialog.setWindowTitle("选择截图保存文件夹")
+        dialog.setDirectory(self.capture_folder)
         if dialog.exec_():
             folder = dialog.selectedFiles()[0]
             self.capture_folder = folder
