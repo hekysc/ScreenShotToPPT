@@ -46,7 +46,7 @@ class MainApp(QWidget):
         # 新增：应用设置对象（组织名、应用名可自定义）
         username = re.sub(r'[^A-Za-z0-9_-]', '_', getpass.getuser())
         # self.settings = QSettings(username, "ScreenShotToPPT")
-
+        
         # 获取用户主目录
         user_home = os.path.expanduser("~")
 
@@ -58,7 +58,7 @@ class MainApp(QWidget):
         # config_file_path="CONFIG.ini"
 
         self.settings=QSettings(config_file,QSettings.IniFormat)
-        
+
         self.init_ui()
 
         # 新增：加载保存过的参数
@@ -207,23 +207,23 @@ class MainApp(QWidget):
         self.img_manager.clear()
 
         for title, hwnd in get_window_list():
-            img = capture_window(hwnd)
-            # 情况 1: 截图正常
-            if img and img.width > 30 and img.height > 30 and not is_image_black(img):
-                img=img
-                status_flag="succeed"
+            img,status_flag= capture_window(hwnd)
+            # # 情况 1: 截图正常
+            # if img and img.width > 30 and img.height > 30 and not is_image_black(img):
+            #     img=img
+            #     status_flag="Succeed"
             
-            # 情况 2: 截图为 None 或尺寸过小
-            elif img is None or img.width <= 30 or img.height <= 30:
-                placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
+            # # 情况 2: 截图为 None 或尺寸过小
+            # elif img is None or img.width <= 30 or img.height <= 30:
+            #     # placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
+            #     # img=placeholder
+            #     status_flag="fail"
 
-            # 情况 3: 全黑图
-            elif is_image_black(img):
-                placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
+            # # 情况 3: 全黑图
+            # elif is_image_black(img):
+            #     # placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
+            #     # img=placeholder
+            #     status_flag="fail"
 
             hoverview_img=hoverview_img_generator(img)
             preview_img=preview_img_generator(img)
@@ -234,6 +234,8 @@ class MainApp(QWidget):
                 iconview_img, status_flag
                 ]
             self.combo.addItem(iconview_img, title,status_flag)
+
+            print(title,status_flag)
 
         # 按 flag 排序（成功在前，失败在后）
         self.refresh_combo(sort_index=3, reverse=False)
@@ -437,6 +439,7 @@ class MainApp(QWidget):
             # 已经在上面 setText/setValue 处理，无需额外操作
         except Exception as e:
             self.log_message(f"加载设置失败: {e}")
+
 
     def closeEvent(self, event):
         # 退出前保存一次
