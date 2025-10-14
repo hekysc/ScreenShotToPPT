@@ -55,19 +55,19 @@ def capture_window(hwnd):
         
         # 情况 2: 截图为 None 或尺寸过小
         elif img is None or img.width <= 30 or img.height <= 30:
-            placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
+            placeholder = create_placeholder_image(text="窗口可能被最小化\n或其它原因，无法截图", color=(200, 0, 0))  # 背景
             img=placeholder
             status_flag="fail"
 
         # 情况 3: 全黑图
         elif is_image_black(img):
-            placeholder = create_placeholder_image(text="Fail, 窗口可能被最小化", color=(150, 0, 0))  # 背景
+            placeholder = create_placeholder_image(text="窗口可能被最小化\n或其它原因，无法截图", color=(150, 0, 0))  # 背景
             img=placeholder
             status_flag="fail"
 
         return img,status_flag
     except Exception as e:
-        print("Capture error:", e)
+        # print("Capture error:", e)
         placeholder = create_placeholder_image(text=str(e), color=(200, 0, 0))  # 背景
         img=placeholder
         status_flag="fail"
@@ -84,11 +84,14 @@ def create_placeholder_image(size=(200,150),text="Fail",color=(200, 200, 200)):
     draw = ImageDraw.Draw(img)
     # print(size)
 
-    # 使用默认字体居中绘制文字
     try:
-        font = ImageFont.truetype("arial.ttf", 16)
-    except:
-        font = ImageFont.load_default()
+        # 指定支持中文的字体路径
+        font = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 16)
+    except Exception as e:
+        try:
+            font = ImageFont.truetype("C:/Windows/Fonts/SimHei.ttf", 16)
+        except:
+            font = ImageFont.load_default()
 
     bbox = draw.textbbox((0, 0), text, font=font)
     text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
