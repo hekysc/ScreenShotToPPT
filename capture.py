@@ -1,13 +1,23 @@
 import win32gui, win32ui, win32con
 from PIL import Image, ImageChops,ImageDraw,ImageFont,ImageStat
 import ctypes
-import ctypes.wintypes
 
 def get_window_list():
     windows = []
+    exclude_keywords = ["EndpointClientGUI", "Wemail"]
+
     def callback(hwnd, extra):
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
-            windows.append((win32gui.GetWindowText(hwnd), hwnd))
+        if win32gui.IsWindowVisible(hwnd):
+            window_title=win32gui.GetWindowText(hwnd)
+            if not window_title:
+                return #跳过空标题窗口
+            
+            for keyword in exclude_keywords:
+                if keyword.lower() in window_title.lower():
+                    return  # 包含排除关键词，跳过该窗口
+                    
+            windows.append((window_title, hwnd))
+    
     win32gui.EnumWindows(callback, None)
     return windows
 
