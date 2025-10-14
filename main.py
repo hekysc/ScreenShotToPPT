@@ -213,22 +213,6 @@ class MainApp(QWidget):
 
         for title, hwnd in get_window_list():
             img,status_flag= capture_window(hwnd)
-            # # 情况 1: 截图正常
-            # if img and img.width > 30 and img.height > 30 and not is_image_black(img):
-            #     img=img
-            #     status_flag="Succeed"
-            
-            # # 情况 2: 截图为 None 或尺寸过小
-            # elif img is None or img.width <= 30 or img.height <= 30:
-            #     # placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
-            #     # img=placeholder
-            #     status_flag="fail"
-
-            # # 情况 3: 全黑图
-            # elif is_image_black(img):
-            #     # placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
-            #     # img=placeholder
-            #     status_flag="fail"
 
             hoverview_img=hoverview_img_generator(img)
             preview_img=preview_img_generator(img)
@@ -240,7 +224,7 @@ class MainApp(QWidget):
                 ]
             self.combo.addItem(iconview_img, title,status_flag)
 
-            print(title,status_flag)
+            # print(title,status_flag)
 
         # 按 flag 排序（成功在前，失败在后）
         self.refresh_combo(sort_index=3, reverse=False)
@@ -295,6 +279,7 @@ class MainApp(QWidget):
         self.update_capture_count_label()
         self.start_time = time.time()
         self.last_image = None
+        self.capture_loop()  # 立即执行一次截图
         self.timer.start(self.interval_spin.value() * 1000)
         self.log_message("开始截图...")
         self.start_btn.setVisible(False)
@@ -310,7 +295,7 @@ class MainApp(QWidget):
     def capture_loop(self):
         title = self.combo.currentText()
         hwnd = self.img_manager[title][1]
-        img = capture_window(hwnd)
+        img = capture_window(hwnd)[0]
 
         if img is None or img.size[0] < 30 or img.size[1] < 30:
             img = Image.new("RGB", (50, 50), (255, 0, 0))
