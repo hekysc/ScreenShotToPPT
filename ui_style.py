@@ -39,30 +39,6 @@ def create_styled_info(text: str, min_width: int = 150) -> QLabel:
         label.setMinimumWidth(min_width)
     return label
 
-# def create_styled_info(text: str, min_width: int = 150) -> QTextEdit:
-    # text_edit = QTextEdit(text)
-    # text_edit.setStyleSheet("""
-        # QTextEdit {
-            # color: gray;
-            # font-weight: bold;
-            # font-size: 10pt;
-            # padding: 4px 6px 4px 4px;
-            # border: 1px solid #aaa;
-            # background-color: white;
-            # border-radius: 4px;
-        # }
-    # """)
-    # text_edit.setReadOnly(True)
-    # text_edit.setLineWrapMode(QTextEdit.WidgetWidth)
-    # text_edit.setWordWrapMode(2)  # 2 表示自动换行
-    # text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-    # text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-
-    # if min_width:
-        # text_edit.setMinimumWidth(min_width)
-
-    # return text_edit
-
 def style_preview_label(label: QLabel, width=200, height=150):
     label.setWindowFlags(Qt.ToolTip)
     label.setFixedSize(width, height)
@@ -80,16 +56,52 @@ def style_preview_label(label: QLabel, width=200, height=150):
     label.hide()
 
 def style_input_widget(widget,min_width=150):
-    widget.setStyleSheet("""
-        QWidget {
-            background-color: #e6f7ff;
-            border: 1px solid #aaa;
-            border-radius: 4px;
-            padding: 4px 6px;
-            font-size: 10pt;
-            color: #005577;
-        }
+
+    widget.setStyleSheet(f"""
+        /* 基础 QWidget 样式（适用于 QComboBox 本身） */
+        QWidget {{
+            background-color: #e6f7ff;   /* 浅蓝色背景 */
+            border: 1px solid #aaa;      /* 灰色边框 */
+            border-radius: 4px;          /* 圆角边框 */
+            padding: 4px 1px;            /* 内边距，让文字不贴边 */
+            font-size: 10pt;              /* 字体大小 */
+            color: #005577;               /* 字体颜色 */
+        }}
+        
+        /* 设置下拉菜单中列表的样式（QAbstractItemView 是下拉菜单的视图） */
+        QComboBox QAbstractItemView {{
+            outline: 0px;                /* 去掉选中项的虚线框 */
+            border: 1px solid #ccc;      /* 设置列表边框 */
+            border-radius: 4px;          /* 列表区域圆角 */
+        }}
+        
+        /* 设置垂直滚动条的宽度及背景色 */
+        QComboBox QScrollBar:vertical {{
+            width: 20px;                 /* 滚动条宽度（关键设置） */
+            background-color: #f0f0f0;    /* 滚动条背景色 */
+            margin: 0px 0px 0px 0px;     /* 滚动条与内容之间无额外边距 */
+        }}
+        
+        /* 设置垂直滚动条滑块部分的样式 */
+        QComboBox QScrollBar::handle:vertical {{
+            background: #cfcfcf;          /* 滑块颜色 */
+            border-radius: 4px;          /* 滑块圆角，更美观 */
+        }}
+        
+        /* 隐藏垂直滚动条的上下箭头按钮 */
+        QComboBox QScrollBar::add-line, QComboBox QScrollBar::sub-line {{
+            background: none;
+            width: 0px;
+            height: 0px;
+            sub-line: none;
+        }}
+        
+        /* 隐藏滚动条两侧空白区域的点击区域样式 */
+        QComboBox QScrollBar::add-page, QComboBox QScrollBar::sub-page {{
+            background: none;
+        }}
     """)
+
     if min_width:
         widget.setMinimumWidth(min_width)
     return widget

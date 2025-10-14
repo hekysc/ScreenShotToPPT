@@ -45,7 +45,19 @@ class MainApp(QWidget):
 
         # 新增：应用设置对象（组织名、应用名可自定义）
         username = re.sub(r'[^A-Za-z0-9_-]', '_', getpass.getuser())
-        self.settings = QSettings(username, "ScreenShotToPPT")
+        # self.settings = QSettings(username, "ScreenShotToPPT")
+        
+        # 获取用户主目录
+        user_home = os.path.expanduser("~")
+
+        # 构建 .ScreenShotToPPT 目录路径
+        config_dir = os.path.join(user_home, ".ScreenShotToPPT")
+
+        # 构建 CONFIG.ini 文件路径
+        config_file = os.path.join(config_dir, "CONFIG.ini")
+        # config_file_path="CONFIG.ini"
+
+        self.settings=QSettings(config_file,QSettings.IniFormat)
 
         self.init_ui()
 
@@ -112,6 +124,11 @@ class MainApp(QWidget):
         folder_layout.addWidget(folder_label)
 
         self.folder_path_info=create_styled_info(self.capture_folder)
+
+        self.folder_path_info.setTextFormat(Qt.RichText)
+        self.folder_path_info.setOpenExternalLinks(False)
+        self.folder_path_info.linkActivated.connect(self.on_folder_link_activated)
+
         folder_layout.addWidget(self.folder_path_info)
 
         self.folder_btn = QPushButton("...")
@@ -195,23 +212,7 @@ class MainApp(QWidget):
         self.img_manager.clear()
 
         for title, hwnd in get_window_list():
-            img = capture_window(hwnd)
-            # 情况 1: 截图正常
-            if img and img.width > 30 and img.height > 30 and not is_image_black(img):
-                img=img
-                status_flag="succeed"
-            
-            # 情况 2: 截图为 None 或尺寸过小
-            elif img is None or img.width <= 30 or img.height <= 30:
-                placeholder = create_placeholder_image(text="Fail", color=(200, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
-
-            # 情况 3: 全黑图
-            elif is_image_black(img):
-                placeholder = create_placeholder_image(text="Fail, Full BLACK", color=(150, 0, 0))  # 背景
-                img=placeholder
-                status_flag="fail"
+            img,status_flag= capture_window(hwnd)
 
             hoverview_img=hoverview_img_generator(img)
             preview_img=preview_img_generator(img)
@@ -222,6 +223,8 @@ class MainApp(QWidget):
                 iconview_img, status_flag
                 ]
             self.combo.addItem(iconview_img, title,status_flag)
+
+            # print(title,status_flag)
 
         # 按 flag 排序（成功在前，失败在后）
         self.refresh_combo(sort_index=3, reverse=False)
@@ -247,13 +250,26 @@ class MainApp(QWidget):
         dialog.setFileMode(QFileDialog.Directory)
         dialog.setOption(QFileDialog.ShowDirsOnly, True)
         dialog.setWindowTitle("选择截图保存文件夹")
+        dialog.setDirectory(self.capture_folder)
         if dialog.exec_():
             folder = dialog.selectedFiles()[0]
             self.capture_folder = folder
-            self.folder_path_info.setText(folder)
+            # self.folder_path_info.setText(folder)
+            self.update_folder_path_info(folder)
             self.log_message(f"截图将保存到: {folder}")
         # 新增：立刻保存
         self.save_settings()
+
+    def update_folder_path_info(self, folder):
+        folder_url = QUrl.fromLocalFile(folder).toString()
+        folder_html = escape(folder)
+        self.folder_path_info.setText(f'<a href="{folder_url}">{folder_html}</a>')
+
+    def on_folder_link_activated(self, url):
+        try:
+            QDesktopServices.openUrl(QUrl(url))
+        except Exception as e:
+            self.log_message(f"打开文件夹失败: {e}")
 
     def start_capture(self):
         if not self.capture_folder:
@@ -263,6 +279,7 @@ class MainApp(QWidget):
         self.update_capture_count_label()
         self.start_time = time.time()
         self.last_image = None
+        self.capture_loop()  # 立即执行一次截图
         self.timer.start(self.interval_spin.value() * 1000)
         self.log_message("开始截图...")
         self.start_btn.setVisible(False)
@@ -278,7 +295,7 @@ class MainApp(QWidget):
     def capture_loop(self):
         title = self.combo.currentText()
         hwnd = self.img_manager[title][1]
-        img = capture_window(hwnd)
+        img = capture_window(hwnd)[0]
 
         if img is None or img.size[0] < 30 or img.size[1] < 30:
             img = Image.new("RGB", (50, 50), (255, 0, 0))
@@ -414,7 +431,8 @@ class MainApp(QWidget):
             folder = self.settings.value("capture_folder", type=str)
             if folder and os.path.isdir(folder):
                 self.capture_folder = folder
-                self.folder_path_info.setText(folder)
+                # self.folder_path_info.setText(folder)
+                self.update_folder_path_info(folder)
 
             interval = self.settings.value("interval_seconds", type=int)
             if interval and 1 <= interval <= 60:
@@ -424,6 +442,7 @@ class MainApp(QWidget):
             # 已经在上面 setText/setValue 处理，无需额外操作
         except Exception as e:
             self.log_message(f"加载设置失败: {e}")
+
 
     def closeEvent(self, event):
         # 退出前保存一次
