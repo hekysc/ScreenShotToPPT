@@ -124,6 +124,11 @@ class MainApp(QWidget):
         folder_layout.addWidget(folder_label)
 
         self.folder_path_info=create_styled_info(self.capture_folder)
+
+        self.folder_path_info.setTextFormat(Qt.RichText)
+        self.folder_path_info.setOpenExternalLinks(False)
+        self.folder_path_info.linkActivated.connect(self.on_folder_link_activated)
+
         folder_layout.addWidget(self.folder_path_info)
 
         self.folder_btn = QPushButton("...")
@@ -265,10 +270,22 @@ class MainApp(QWidget):
         if dialog.exec_():
             folder = dialog.selectedFiles()[0]
             self.capture_folder = folder
-            self.folder_path_info.setText(folder)
+            # self.folder_path_info.setText(folder)
+            self.update_folder_path_info(folder)
             self.log_message(f"截图将保存到: {folder}")
         # 新增：立刻保存
         self.save_settings()
+
+    def update_folder_path_info(self, folder):
+        folder_url = QUrl.fromLocalFile(folder).toString()
+        folder_html = escape(folder)
+        self.folder_path_info.setText(f'<a href="{folder_url}">{folder_html}</a>')
+
+    def on_folder_link_activated(self, url):
+        try:
+            QDesktopServices.openUrl(QUrl(url))
+        except Exception as e:
+            self.log_message(f"打开文件夹失败: {e}")
 
     def start_capture(self):
         if not self.capture_folder:
@@ -429,7 +446,8 @@ class MainApp(QWidget):
             folder = self.settings.value("capture_folder", type=str)
             if folder and os.path.isdir(folder):
                 self.capture_folder = folder
-                self.folder_path_info.setText(folder)
+                # self.folder_path_info.setText(folder)
+                self.update_folder_path_info(folder)
 
             interval = self.settings.value("interval_seconds", type=int)
             if interval and 1 <= interval <= 60:
