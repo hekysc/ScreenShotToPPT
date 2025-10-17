@@ -83,11 +83,13 @@ def capture_window(hwnd):
         status_flag="fail"
         return img,status_flag
 
-def is_different(img1, img2, threshold=5):
-    diff = ImageChops.difference(img1, img2).convert("L")
-    hist = diff.histogram()
-    score = sum(i * hist[i] for i in range(256)) / (img1.size[0] * img1.size[1])
-    return score > threshold
+def get_diff_score(img1, img2, algo=1):
+    # 逐象素对比
+    if algo==1:
+        diff = ImageChops.difference(img1, img2).convert("L")
+        hist = diff.histogram()
+        score = sum(i * hist[i] for i in range(256)) / (img1.size[0] * img1.size[1])
+        return score
 
 def create_placeholder_image(size=(200,150),text="Fail",color=(200, 200, 200)):
     img = Image.new("RGB", size, color=color)
