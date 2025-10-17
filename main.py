@@ -5,13 +5,13 @@ from html import escape
 import getpass
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFileDialog, QComboBox, QTextBrowser, QSpinBox, QListView
+    QFileDialog, QComboBox, QTextBrowser, QSpinBox, QDoubleSpinBox, QListView
 )
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSettings, QUrl
 from PyQt5.QtGui import QIcon, QDesktopServices
 from capture import (
     get_window_list, capture_window, 
-    is_different,create_placeholder_image,is_image_black
+    get_diff_score,create_placeholder_image,is_image_black
 )
 from ppt_generator import generate_ppt
 from img_convertor import (
@@ -61,7 +61,7 @@ class MainApp(QWidget):
         # 构建 CONFIG.ini 文件路径
         config_file = os.path.join(config_dir, "CONFIG.ini")
 
-        self.settings=QSettings(config_file,QSettings.IniFormat)
+        self.settings=QSettings(config_file,QSettings.Format.IniFormat)
 
         self.init_ui()
 
@@ -128,7 +128,9 @@ class MainApp(QWidget):
         diff_layout.addWidget(diff_label)
         
         # 图片差异性-数值输入框 
-        self.diff_threshold = QSpinBox()
+        self.diff_threshold = QDoubleSpinBox()
+        self.diff_threshold.setDecimals(2)             # 设置两位小数
+        self.diff_threshold.setSingleStep(0.5)             # 设置步长
         self.diff_threshold.setToolTip("0-99，数值越大，代表差异较大的图片才会被保存")
         self.diff_threshold.valueChanged.connect(lambda _: self.save_settings())
         style_input_widget(self.diff_threshold)
@@ -144,7 +146,7 @@ class MainApp(QWidget):
 
         self.folder_path_info=create_styled_info('')
 
-        self.folder_path_info.setTextFormat(Qt.RichText)
+        self.folder_path_info.setTextFormat(Qt.TextFormat.RichText)
         self.folder_path_info.setOpenExternalLinks(False)
         self.folder_path_info.linkActivated.connect(self.on_folder_link_activated)
 
@@ -164,12 +166,12 @@ class MainApp(QWidget):
         self.start_btn = QPushButton("开始自动截图")
         style_btn(self.start_btn)
         self.start_btn.clicked.connect(self.start_capture)
-        scr_shot_layout.addWidget(self.start_btn,alignment=Qt.AlignLeft)
+        scr_shot_layout.addWidget(self.start_btn,alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.stop_btn = QPushButton("停止自动截图")
         style_btn(self.stop_btn,bg_color="#EC4630",width=150)
         self.stop_btn.clicked.connect(self.stop_capture)
-        scr_shot_layout.addWidget(self.stop_btn,alignment=Qt.AlignLeft)
+        scr_shot_layout.addWidget(self.stop_btn,alignment=Qt.AlignmentFlag.AlignLeft)
 
         scr_shot_layout.setSpacing(5)
 
@@ -177,7 +179,7 @@ class MainApp(QWidget):
         self.quickshot_btn = QPushButton("立即")
         style_btn(self.quickshot_btn,width=30)
         self.quickshot_btn.clicked.connect(self.capture_loop)
-        scr_shot_layout.addWidget(self.quickshot_btn,alignment=Qt.AlignLeft)
+        scr_shot_layout.addWidget(self.quickshot_btn,alignment=Qt.AlignmentFlag.AlignLeft)
 
         # scr_shot_layout.setSpacing(20)
 
@@ -186,7 +188,7 @@ class MainApp(QWidget):
 
         # 实时有效截图数量标签（显示在“停止截图”右侧）
         self.capture_count_label = create_styled_info("本次有效截图: 0",min_width=200)
-        scr_shot_layout.addWidget(self.capture_count_label, alignment=Qt.AlignLeft)
+        scr_shot_layout.addWidget(self.capture_count_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # ppt按钮
         ppt_widget=QWidget()
@@ -198,20 +200,20 @@ class MainApp(QWidget):
 
         # 生成结果展示（按钮下方显示路径 + 可点击链接）
         self.ppt_result_info = create_styled_info("")
-        self.ppt_result_info.setTextFormat(Qt.RichText)
+        self.ppt_result_info.setTextFormat(Qt.TextFormat.RichText)
         # Use custom handler to support both file:// open and reveal action
         self.ppt_result_info.setOpenExternalLinks(False)
         self.ppt_result_info.linkActivated.connect(self.on_ppt_link_activated)
         self.ppt_result_info.hide()
-        ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignLeft)
+        ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignmentFlag.AlignLeft)
 
         # 实时显示文件夹中图片数量
         self.image_count_label = create_styled_info("文件夹中有效图片: 0",min_width=200)
-        ppt_layout.addWidget(self.image_count_label, alignment=Qt.AlignLeft)
+        ppt_layout.addWidget(self.image_count_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # 建立预览窗口
         self.preview = QLabel("截图预览")
-        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setFixedHeight(300)
         # self.preview.setFixedWidth(400)
         self.preview.setStyleSheet("""
@@ -314,6 +316,7 @@ class MainApp(QWidget):
             self.log_message("请先选择截图保存文件夹")
             return
         self.capture_count = 0
+        self.image_count=image_files_count(self.capture_folder,self.image_type)
         self.update_count_label()
         self.start_time = time.time()
         self.last_image = None
@@ -338,12 +341,22 @@ class MainApp(QWidget):
         title = self.combo.currentText()
         hwnd = self.img_manager[title][1]
         img = capture_window(hwnd)[0]
+        force_capture=False
+        diff_score=0.0
 
         if img is None or img.size[0] < 30 or img.size[1] < 30:
-            img = Image.new("RGB", (50, 50), (255, 0, 0))
+            red_color = (255 << 16) | (0 << 8) | 0
+            img = Image.new("RGB", (50, 50), red_color) 
+            # img = Image.new("RGB", (50, 50), (255, 0, 0))
             self.log_message("截图失败，使用红色占位图")
         else:
-            if self.last_image is None or is_different(self.last_image, img, self.diff_threshold.value()):
+            if self.last_image is None:
+                force_capture=True
+            else:
+                diff_score=round(get_diff_score(self.last_image, img),2)
+                force_capture= diff_score > self.diff_threshold.value()
+
+            if force_capture:
                 self.capture_count += 1
                 self.update_count_label()
                 title = title.strip().replace(" ", "_").replace(":", "_")
@@ -352,18 +365,18 @@ class MainApp(QWidget):
                 filename = f"{safe_title}_{timestamp}.png"
                 path = os.path.join(self.capture_folder, filename)
                 img.save(path)
-                self.log_message(f"保存截图: {filename}")
+                self.log_message(f"差异大:{diff_score}，保存: {filename}")
                 self.last_image = img
             else:
-                self.log_message("截图内容相似，未保存")
+                self.log_message(f"差异小：{diff_score}，未保存")
 
         pixmap = pil_image_to_qpixmap(img)
-        self.preview.setPixmap(pixmap.scaled(400, 300, Qt.KeepAspectRatio,Qt.SmoothTransformation))
+        self.preview.setPixmap(pixmap.scaled(400, 300, Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
 
     def update_count_label(self):
         try:
-            self.capture_count_label.setText(f"有效截图: {self.capture_count}")
-            self.image_count_label.setText(f"文件夹中有效图片:{self.image_count+self.capture_count}")
+            self.capture_count_label.setText(f"本次有效截图: {self.capture_count}")
+            self.image_count_label.setText(f"文件夹图片数量:{self.image_count+self.capture_count}")
         except Exception:
             pass
 
@@ -546,11 +559,11 @@ class HoverListView(QListView):
 class HoverPreview(QWidget):
     def __init__(self, width=200, height=150):
         super().__init__()
-        self.setWindowFlags(Qt.ToolTip)
+        self.setWindowFlags(Qt.WindowType.ToolTip)
 
         self.title_label = QLabel()
         self.title_label.setWordWrap(True)
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # self.title_label.setStyleSheet("""
         #     QLabel {
         #         font-size: 9pt;
@@ -561,7 +574,7 @@ class HoverPreview(QWidget):
         # """)
 
         self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # self.image_label.setStyleSheet("""
         #     QLabel {
         #         border: 1px solid #888;
