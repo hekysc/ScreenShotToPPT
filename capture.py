@@ -71,7 +71,7 @@ def capture_window(hwnd):
 
         # 情况 3: 全黑图
         elif is_image_black(img):
-            placeholder = create_placeholder_image(text="窗口可能被最小化\n或其它原因，无法截图", color=(150, 0, 0))  # 背景
+            placeholder = create_placeholder_image(text="窗口可能被最小化\n或其它原因，全黑", color=(150, 0, 0))  # 背景
             img=placeholder
             status_flag="fail"
 
@@ -83,7 +83,7 @@ def capture_window(hwnd):
         status_flag="fail"
         return img,status_flag
 
-def is_different(img1, img2, threshold=10):
+def is_different(img1, img2, threshold=5):
     diff = ImageChops.difference(img1, img2).convert("L")
     hist = diff.histogram()
     score = sum(i * hist[i] for i in range(256)) / (img1.size[0] * img1.size[1])
