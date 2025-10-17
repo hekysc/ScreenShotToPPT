@@ -1,5 +1,6 @@
 import sys, os, time, subprocess
 import urllib.parse
+from window_utils import image_files_count
 from html import escape
 import getpass
 from PyQt5.QtWidgets import (
@@ -34,7 +35,10 @@ class MainApp(QWidget):
         self.setWindowTitle("窗口截图与PPT生成器")
         # 使用项目内的自定义图标
         self.setWindowIcon(QIcon("icon/icon.jpg"))
-        self.setGeometry(100, 100, 400, 600)
+        self.setGeometry(100, 100, 500, 600)
+
+        self.image_type = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg', '.ico', '.heic'}
+        self.image_count=0   #文件夹中图片数量
 
         self.last_image = None
         self.capture_folder=''
@@ -85,7 +89,7 @@ class MainApp(QWidget):
         # 刷新窗口按钮
         self.widow_refresh_btn = QPushButton("刷新")
         style_btn(self.widow_refresh_btn)
-        self.widow_refresh_btn.setToolTip("选择保存文件夹")
+        self.widow_refresh_btn.setToolTip("刷新窗口列表")
         self.widow_refresh_btn.setFixedWidth(28)
         self.widow_refresh_btn.clicked.connect(self.refresh_window_list)
         window_layout.addWidget(self.widow_refresh_btn)
@@ -104,11 +108,12 @@ class MainApp(QWidget):
         interval_layout.setContentsMargins(8, 8, 8, 8)
 
         # 截图间隔-标签        
-        interval_label = create_styled_label("截图间隔(s)")
+        interval_label = create_styled_label("截图间隔(秒)")
         interval_layout.addWidget(interval_label)
         
         # 截图间隔-数值输入框 
         self.interval_spin = QSpinBox()
+        self.interval_spin.setToolTip("0-60，截图间隔")
         self.interval_spin.valueChanged.connect(lambda _: self.save_settings())
         style_input_widget(self.interval_spin)
         interval_layout.addWidget(self.interval_spin)
@@ -124,6 +129,7 @@ class MainApp(QWidget):
         
         # 图片差异性-数值输入框 
         self.diff_threshold = QSpinBox()
+        self.diff_threshold.setToolTip("0-99，数值越大，代表差异较大的图片才会被保存")
         self.diff_threshold.valueChanged.connect(lambda _: self.save_settings())
         style_input_widget(self.diff_threshold)
         diff_layout.addWidget(self.diff_threshold)
@@ -155,24 +161,31 @@ class MainApp(QWidget):
         scr_shot_widget=QWidget()
         scr_shot_layout = QHBoxLayout(scr_shot_widget)
 
-        self.start_btn = QPushButton("开始截图")
+        self.start_btn = QPushButton("开始自动截图")
         style_btn(self.start_btn)
         self.start_btn.clicked.connect(self.start_capture)
         scr_shot_layout.addWidget(self.start_btn,alignment=Qt.AlignLeft)
 
-        scr_shot_layout.setSpacing(20)
-
-        self.stop_btn = QPushButton("停止截图")
-        style_btn(self.stop_btn,bg_color="#EC4630")
+        self.stop_btn = QPushButton("停止自动截图")
+        style_btn(self.stop_btn,bg_color="#EC4630",width=150)
         self.stop_btn.clicked.connect(self.stop_capture)
         scr_shot_layout.addWidget(self.stop_btn,alignment=Qt.AlignLeft)
+
+        scr_shot_layout.setSpacing(5)
+
+        # 立即截图按钮
+        self.quickshot_btn = QPushButton("立即")
+        style_btn(self.quickshot_btn,width=30)
+        self.quickshot_btn.clicked.connect(self.capture_loop)
+        scr_shot_layout.addWidget(self.quickshot_btn,alignment=Qt.AlignLeft)
+
+        # scr_shot_layout.setSpacing(20)
 
         #增加手动立即截图按钮
         
 
         # 实时有效截图数量标签（显示在“停止截图”右侧）
-        self.capture_count_label = create_styled_info("有效截图: 0")
-        self.capture_count_label.setMinimumWidth(120)
+        self.capture_count_label = create_styled_info("本次有效截图: 0",min_width=200)
         scr_shot_layout.addWidget(self.capture_count_label, alignment=Qt.AlignLeft)
 
         # ppt按钮
@@ -182,7 +195,6 @@ class MainApp(QWidget):
         self.ppt_btn = QPushButton("生成PPT")
         style_btn(self.ppt_btn)
         self.ppt_btn.clicked.connect(self.generate_ppt)
-        ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignLeft)
 
         # 生成结果展示（按钮下方显示路径 + 可点击链接）
         self.ppt_result_info = create_styled_info("")
@@ -191,6 +203,11 @@ class MainApp(QWidget):
         self.ppt_result_info.setOpenExternalLinks(False)
         self.ppt_result_info.linkActivated.connect(self.on_ppt_link_activated)
         self.ppt_result_info.hide()
+        ppt_layout.addWidget(self.ppt_btn,alignment=Qt.AlignLeft)
+
+        # 实时显示文件夹中图片数量
+        self.image_count_label = create_styled_info("文件夹中有效图片: 0",min_width=200)
+        ppt_layout.addWidget(self.image_count_label, alignment=Qt.AlignLeft)
 
         # 建立预览窗口
         self.preview = QLabel("截图预览")
@@ -222,6 +239,7 @@ class MainApp(QWidget):
         layout.addWidget(self.log)
 
         self.stop_btn.setVisible(False)
+        self.quickshot_btn.setVisible(False)
 
         self.setLayout(layout)
             
@@ -282,6 +300,8 @@ class MainApp(QWidget):
         folder_url = QUrl.fromLocalFile(folder).toString()
         folder_html = escape(folder)
         self.folder_path_info.setText(f'<a href="{folder_url}">{folder_html}</a>')
+        self.image_count=image_files_count(folder,self.image_type)
+        self.update_count_label()
 
     def on_folder_link_activated(self, url):
         try:
@@ -294,21 +314,25 @@ class MainApp(QWidget):
             self.log_message("请先选择截图保存文件夹")
             return
         self.capture_count = 0
-        self.update_capture_count_label()
+        self.update_count_label()
         self.start_time = time.time()
         self.last_image = None
         self.log_message("开始截图...")
         self.capture_loop()  # 立即执行一次截图
         self.timer.start(self.interval_spin.value() * 1000)
         self.start_btn.setVisible(False)
+        self.quickshot_btn.setVisible(True)
         self.stop_btn.setVisible(True)
+        self.ppt_btn.setDisabled(True)
 
     def stop_capture(self):
         self.timer.stop()
         elapsed = time.time() - self.start_time if self.start_time else 0
         self.log_message(f"截图结束，耗时 {elapsed:.1f} 秒，共保存 {self.capture_count} 张截图")
         self.stop_btn.setVisible(False)
+        self.quickshot_btn.setVisible(False)
         self.start_btn.setVisible(True)
+        self.ppt_btn.setDisabled(False)
 
     def capture_loop(self):
         title = self.combo.currentText()
@@ -321,7 +345,7 @@ class MainApp(QWidget):
         else:
             if self.last_image is None or is_different(self.last_image, img, self.diff_threshold.value()):
                 self.capture_count += 1
-                self.update_capture_count_label()
+                self.update_count_label()
                 title = title.strip().replace(" ", "_").replace(":", "_")
                 safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -336,9 +360,10 @@ class MainApp(QWidget):
         pixmap = pil_image_to_qpixmap(img)
         self.preview.setPixmap(pixmap.scaled(400, 300, Qt.KeepAspectRatio,Qt.SmoothTransformation))
 
-    def update_capture_count_label(self):
+    def update_count_label(self):
         try:
             self.capture_count_label.setText(f"有效截图: {self.capture_count}")
+            self.image_count_label.setText(f"文件夹中有效图片:{self.image_count+self.capture_count}")
         except Exception:
             pass
 
@@ -355,7 +380,7 @@ class MainApp(QWidget):
         # 获取截图文件列表
         files = sorted([
             f for f in os.listdir(folder)
-            if f.lower().endswith(".png")
+            if f.lower().endswith(tuple(self.image_type))
         ])
         if not files:
             self.log_message("截图文件夹中没有可用的图片")
@@ -465,6 +490,8 @@ class MainApp(QWidget):
             
             self.capture_folder=folder
             self.update_folder_path_info(folder)
+            # self.image_count=image_files_count(folder,self.image_type)
+            # self.update_count_label()
             self.interval_spin.setValue(interval)
             self.interval_spin.setRange(1, 60)
             # 同步 UI（如果 load 比 init_ui 晚执行）
