@@ -37,7 +37,7 @@ class MainApp(QWidget):
         self.setGeometry(100, 100, 400, 600)
 
         self.last_image = None
-        self.capture_folder = sys.path[0]
+        self.capture_folder=''
         self.capture_count = 0
         self.start_time = None
         self.timer = QTimer()
@@ -51,11 +51,11 @@ class MainApp(QWidget):
         user_home = os.path.expanduser("~")
 
         # 构建 .ScreenShotToPPT 目录路径
-        config_dir = os.path.join(user_home, ".ScreenShotToPPT")
+        config_dir = os.path.join(user_home, ".ScreenShotToPPT")    #设置文件在个人文件夹
+        # config_dir = sys.path[0]    #设置文件在当前程序所在文件夹
 
         # 构建 CONFIG.ini 文件路径
         config_file = os.path.join(config_dir, "CONFIG.ini")
-        # config_file_path="CONFIG.ini"
 
         self.settings=QSettings(config_file,QSettings.IniFormat)
 
@@ -109,11 +109,24 @@ class MainApp(QWidget):
         
         # 截图间隔-数值输入框 
         self.interval_spin = QSpinBox()
-        self.interval_spin.setRange(1, 60)
-        self.interval_spin.setValue(5)
         self.interval_spin.valueChanged.connect(lambda _: self.save_settings())
         style_input_widget(self.interval_spin)
         interval_layout.addWidget(self.interval_spin)
+
+        # 图片差异性-创建容器
+        diff_widget = QWidget()
+        diff_layout = QHBoxLayout(diff_widget)
+        diff_layout.setContentsMargins(8, 8, 8, 8)
+
+        # 图片差异性-标签        
+        diff_label = create_styled_label("与前图差异大于")
+        diff_layout.addWidget(diff_label)
+        
+        # 图片差异性-数值输入框 
+        self.diff_threshold = QSpinBox()
+        self.diff_threshold.valueChanged.connect(lambda _: self.save_settings())
+        style_input_widget(self.diff_threshold)
+        diff_layout.addWidget(self.diff_threshold)
 
         # 文件夹选择容器
         folder_widget=QWidget()
@@ -123,7 +136,7 @@ class MainApp(QWidget):
         folder_label=create_styled_label("截图保存文件夹")
         folder_layout.addWidget(folder_label)
 
-        self.folder_path_info=create_styled_info(self.capture_folder)
+        self.folder_path_info=create_styled_info('')
 
         self.folder_path_info.setTextFormat(Qt.RichText)
         self.folder_path_info.setOpenExternalLinks(False)
@@ -154,6 +167,9 @@ class MainApp(QWidget):
         self.stop_btn.clicked.connect(self.stop_capture)
         scr_shot_layout.addWidget(self.stop_btn,alignment=Qt.AlignLeft)
 
+        #增加手动立即截图按钮
+        
+
         # 实时有效截图数量标签（显示在“停止截图”右侧）
         self.capture_count_label = create_styled_info("有效截图: 0")
         self.capture_count_label.setMinimumWidth(120)
@@ -180,6 +196,7 @@ class MainApp(QWidget):
         self.preview = QLabel("截图预览")
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setFixedHeight(300)
+        # self.preview.setFixedWidth(400)
         self.preview.setStyleSheet("""
             border: 1px solid #ccc;
             background-color: #f9f9f9;
@@ -195,7 +212,8 @@ class MainApp(QWidget):
 
         layout.addWidget(window_widget)
         layout.addWidget(interval_widget)
-        layout.addWidget(folder_widget)
+        layout.addWidget(diff_widget) 
+        layout.addWidget(folder_widget)      
         layout.addWidget(scr_shot_widget)
         layout.addWidget(ppt_widget)
         layout.addWidget(self.ppt_result_info)
@@ -279,9 +297,9 @@ class MainApp(QWidget):
         self.update_capture_count_label()
         self.start_time = time.time()
         self.last_image = None
+        self.log_message("开始截图...")
         self.capture_loop()  # 立即执行一次截图
         self.timer.start(self.interval_spin.value() * 1000)
-        self.log_message("开始截图...")
         self.start_btn.setVisible(False)
         self.stop_btn.setVisible(True)
 
@@ -301,7 +319,7 @@ class MainApp(QWidget):
             img = Image.new("RGB", (50, 50), (255, 0, 0))
             self.log_message("截图失败，使用红色占位图")
         else:
-            if self.last_image is None or is_different(self.last_image, img):
+            if self.last_image is None or is_different(self.last_image, img, self.diff_threshold.value()):
                 self.capture_count += 1
                 self.update_capture_count_label()
                 title = title.strip().replace(" ", "_").replace(":", "_")
@@ -344,7 +362,7 @@ class MainApp(QWidget):
             return
 
         # 选择保存路径
-        path, _ = QFileDialog.getSaveFileName(self, "保存PPT", "", "PowerPoint (*.pptx)")
+        path, _ = QFileDialog.getSaveFileName(self, "保存PPT", folder, "PowerPoint (*.pptx)")
         if not path:
             self.log_message("未指定PPT保存路径，操作取消")
             return
@@ -357,13 +375,16 @@ class MainApp(QWidget):
             file_name = os.path.basename(path)
             folder = os.path.dirname(path)
             folder_url = QUrl.fromLocalFile(folder).toString()
+            img_folder_url = QUrl.fromLocalFile(self.capture_folder).toString()
             # Escape visible texts to avoid HTML issues
             file_name_html = escape(file_name)
             folder_html = escape(folder)
+            img_folder_html = escape(self.capture_folder)
             # Names themselves are clickable links
             self.ppt_result_info.setText(
-                f"文件: <a href=\"{file_url}\"><b>{file_name_html}</b></a><br>"
-                f"文件夹: <a href=\"{folder_url}\">{folder_html}</a>"
+                f"ppt文件: <a href=\"{file_url}\"><b>{file_name_html}</b></a><br>"
+                f"ppt文件夹: <a href=\"{folder_url}\">{folder_html}</a><br>"
+                f"图片文件夹: <a href=\"{img_folder_url}\">{img_folder_html}</a>"
             )
             self.ppt_result_info.show()
         except Exception as e:
@@ -421,7 +442,9 @@ class MainApp(QWidget):
         try:
             self.settings.setValue("capture_folder", self.capture_folder)
             self.settings.setValue("interval_seconds", int(self.interval_spin.value()))
-            self.settings.sync()  # 立即落盘
+            self.timer.setInterval(self.interval_spin.value() * 1000)   #立即生效
+            self.settings.setValue("diff_threshold", int(self.diff_threshold.value()))
+            self.settings.sync()  # 立即保存
         except Exception as e:
             self.log_message(f"保存设置失败: {e}")
 
@@ -429,15 +452,21 @@ class MainApp(QWidget):
         """加载上次参数（若不存在则保持默认值）"""
         try:
             folder = self.settings.value("capture_folder", type=str)
-            if folder and os.path.isdir(folder):
-                self.capture_folder = folder
-                # self.folder_path_info.setText(folder)
-                self.update_folder_path_info(folder)
+            if folder and os.path.exists(folder):
+                folder = folder
+                interval = self.settings.value("interval_seconds", type=int)
+                self.diff_threshold.setValue(self.settings.value("diff_threshold",type=int))
 
-            interval = self.settings.value("interval_seconds", type=int)
-            if interval and 1 <= interval <= 60:
-                self.interval_spin.setValue(interval)
-
+            else:
+                folder = sys.path[0]
+                interval=5
+                self.diff_threshold.setValue(5)
+                self.log_message(f"没找到设置文件,保持默认值")
+            
+            self.capture_folder=folder
+            self.update_folder_path_info(folder)
+            self.interval_spin.setValue(interval)
+            self.interval_spin.setRange(1, 60)
             # 同步 UI（如果 load 比 init_ui 晚执行）
             # 已经在上面 setText/setValue 处理，无需额外操作
         except Exception as e:
