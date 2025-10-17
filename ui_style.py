@@ -155,6 +155,12 @@ def style_btn(btn: QPushButton,
             background-color: {bg_color};
             padding-top: 7px; /* 按下微微下移模拟凹陷 */
         }}
+        QPushButton:disabled {{
+            color: black;
+            background-color: gray;            
+        }}
+
+
     """)
     if width:
         btn.setFixedWidth(width)
