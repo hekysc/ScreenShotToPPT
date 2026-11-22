@@ -31,6 +31,7 @@ class CaptureTests(unittest.TestCase):
                 patch.object(MainApp, "load_settings"):
             window = MainApp()
             window.capture_folder = output
+            window.capture_mode.setCurrentIndex(2)
             window.combo.setCurrentIndex(1)
             window.refresh_window_list()
             window.capture_loop()

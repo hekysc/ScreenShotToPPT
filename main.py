@@ -1,6 +1,8 @@
 import sys, os, time, subprocess
 import urllib.parse
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from background_capture import capture_background
 from window_utils import image_files_count
 from html import escape
 import getpass
@@ -64,6 +66,11 @@ class MainApp(QWidget):
 
         self.settings=QSettings(config_file,QSettings.Format.IniFormat)
 
+        self.worker = ThreadPoolExecutor(max_workers=1)
+        self.pending_frame = None
+        self.poll_frame = QTimer(self)
+        self.poll_frame.setInterval(40)
+        self.poll_frame.timeout.connect(self.finish_background_capture)
         self.init_ui()
 
         # 新增：加载保存过的参数
@@ -105,7 +112,7 @@ class MainApp(QWidget):
 
         self.region = None
         self.capture_mode = QComboBox()
-        self.capture_mode.addItems(["后台窗口", "屏幕区域（视频）"])
+        self.capture_mode.addItems(["后台窗口（Windows 图形捕获）", "屏幕区域（视频）", "后台窗口（兼容 GDI）"])
         self.region_btn = QPushButton("框选区域")
         self.region_btn.clicked.connect(self.select_region)
         mode_layout = QHBoxLayout()
@@ -277,8 +284,8 @@ class MainApp(QWidget):
 
     def change_mode(self, mode):
         self.region_btn.setEnabled(mode == 1)
-        self.combo.setEnabled(mode == 0)
-        self.widow_refresh_btn.setEnabled(mode == 0)
+        self.combo.setEnabled(mode != 1)
+        self.widow_refresh_btn.setEnabled(mode != 1)
 
     def select_region(self):
         self.hide()
@@ -360,7 +367,7 @@ class MainApp(QWidget):
             self.showMinimized()
             QTimer.singleShot(350, self.capture_if_running)
         else:
-            self.log_message(f"开始截图：{self.combo.currentText()} · HWND {hwnd:#x}")
+            self.log_message(f"{self.capture_mode.currentText()}：{self.combo.currentText()} · HWND {hwnd:#x}")
             self.capture_loop()
         self.timer.start(self.interval_spin.value() * 1000)
         self.start_btn.setVisible(False)
@@ -370,6 +377,7 @@ class MainApp(QWidget):
 
     def stop_capture(self):
         self.timer.stop()
+        self.discard_background_capture()
         self.capture_mode.setEnabled(True)
         self.change_mode(self.capture_mode.currentIndex())
         elapsed = time.time() - self.start_time if self.start_time else 0
@@ -384,6 +392,11 @@ class MainApp(QWidget):
             self.capture_loop()
 
     def capture_loop(self):
+        if self.capture_mode.currentIndex() == 0:
+            if self.pending_frame is None:
+                self.pending_frame = self.worker.submit(capture_background, self.combo.currentData())
+                self.poll_frame.start()
+            return
         if self.capture_mode.currentIndex() == 1:
             title = "视频区域"
             try:
@@ -399,6 +412,29 @@ class MainApp(QWidget):
                 self.log_message(f"窗口截图失败，HWND {hwnd:#x}")
                 return
 
+        self.process_frame(img, title)
+
+    def discard_background_capture(self):
+        self.poll_frame.stop()
+        if self.pending_frame is not None:
+            self.pending_frame.cancel()
+            self.pending_frame = None
+
+    def finish_background_capture(self):
+        future = self.pending_frame
+        if future is None or not future.done():
+            return
+        self.poll_frame.stop()
+        self.pending_frame = None
+        try:
+            img = future.result()
+        except Exception as error:
+            self.preview.setText("等待后台窗口画面")
+            self.log_message(f"后台窗口采集失败（HWND {self.combo.currentData():#x}）：{error}")
+            return
+        self.process_frame(img, self.combo.currentText())
+
+    def process_frame(self, img, title):
         score = None
         if self.last_image is not None and self.last_image.size == img.size:
             score = round(get_diff_score(self.last_image, img), 2)
@@ -540,6 +576,8 @@ class MainApp(QWidget):
 
 
     def closeEvent(self, event):
+        self.discard_background_capture()
+        self.worker.shutdown(wait=False, cancel_futures=True)
         # 退出前保存一次
         self.save_settings()
         super().closeEvent(event)
@@ -562,7 +600,7 @@ class HoverListView(QListView):
                 hwnd = index.data(Qt.UserRole)
                 pixmap = self.img_manager.get(hwnd)
                 if pixmap:
-                    self.preview_widget.update_content(f"{title} · HWND {hwnd:#x}", pixmap)
+                    self.preview_widget.update_content(f"{title} · HWND {hwnd:#x}（GDI 缩略图）", pixmap)
                     # Ensure widget size matches content before moving
                     self.preview_widget.adjustSize()
                     global_pos = self.viewport().mapToGlobal(event.pos())
