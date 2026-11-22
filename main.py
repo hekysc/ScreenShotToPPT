@@ -1,5 +1,8 @@
 import sys, os, time, subprocess
 import urllib.parse
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from background_capture import capture_background
 from window_utils import image_files_count
 from html import escape
 import getpass
@@ -16,7 +19,6 @@ from capture import (
 from ppt_generator import generate_ppt
 from img_convertor import (
     hoverview_img_generator,
-    preview_img_generator,
     iconview_img_generator,
     pil_image_to_qpixmap
 )
@@ -25,7 +27,8 @@ from ui_style import (
     create_styled_info,style_btn,
     style_preview_widget
 )
-from PIL import Image
+from region_capture import RegionPicker, desktop_snapshot
+from PIL import ImageGrab
 import ctypes
 import re
 
@@ -63,6 +66,11 @@ class MainApp(QWidget):
 
         self.settings=QSettings(config_file,QSettings.Format.IniFormat)
 
+        self.worker = ThreadPoolExecutor(max_workers=1)
+        self.pending_frame = None
+        self.poll_frame = QTimer(self)
+        self.poll_frame.setInterval(40)
+        self.poll_frame.timeout.connect(self.finish_background_capture)
         self.init_ui()
 
         # 新增：加载保存过的参数
@@ -101,6 +109,18 @@ class MainApp(QWidget):
         # 将icon和title填入列表窗口
         hover_view = HoverListView(self.img_manager, self.hover_preview)
         self.combo.setView(hover_view)
+
+        self.region = None
+        self.capture_mode = QComboBox()
+        self.capture_mode.addItems(["后台窗口（Windows 图形捕获）", "屏幕区域（视频）", "后台窗口（兼容 GDI）"])
+        self.region_btn = QPushButton("框选区域")
+        self.region_btn.clicked.connect(self.select_region)
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("截图方式"))
+        mode_layout.addWidget(self.capture_mode)
+        mode_layout.addWidget(self.region_btn)
+        self.capture_mode.currentIndexChanged.connect(self.change_mode)
+        self.region_btn.setEnabled(False)
 
         # 截图间隔-创建容器
         interval_widget = QWidget()
@@ -229,6 +249,7 @@ class MainApp(QWidget):
         self.log.setReadOnly(True)
         self.log.append(f"共发现窗口数: {len(self.img_manager)}")
 
+        layout.addLayout(mode_layout)
         layout.addWidget(window_widget)
         layout.addWidget(interval_widget)
         layout.addWidget(diff_widget) 
@@ -246,32 +267,41 @@ class MainApp(QWidget):
         self.setLayout(layout)
             
     def get_combo_list(self):
+        previous = self.combo.currentData()
         self.combo.clear()
         self.img_manager.clear()
-
+        entries = []
         for title, hwnd in get_window_list():
-            img,status_flag= capture_window(hwnd)
+            img, status = capture_window(hwnd)
+            self.img_manager[hwnd] = hoverview_img_generator(img)
+            entries.append((status, title, hwnd, iconview_img_generator(img)))
+        for status, title, hwnd, icon in sorted(entries, key=lambda item: item[0] != "Succeed"):
+            self.combo.addItem(icon, title, hwnd)
+            self.combo.setItemData(self.combo.count() - 1, f"{title} · HWND {hwnd:#x}", Qt.ToolTipRole)
+        if previous is not None:
+            self.combo.setCurrentIndex(self.combo.findData(previous))
+        self.window_label.setText(f"截图窗口({self.combo.count()})")
 
-            hoverview_img=hoverview_img_generator(img)
-            preview_img=preview_img_generator(img)
-            iconview_img=iconview_img_generator(img)
+    def change_mode(self, mode):
+        self.region_btn.setEnabled(mode == 1)
+        self.combo.setEnabled(mode != 1)
+        self.widow_refresh_btn.setEnabled(mode != 1)
 
-            self.img_manager[title] = [
-                title, hwnd, img, preview_img, hoverview_img,  
-                iconview_img, status_flag
-                ]
-            self.combo.addItem(iconview_img, title,status_flag)
+    def select_region(self):
+        self.hide()
+        QTimer.singleShot(350, self.open_region_picker)
 
-            # print(title,status_flag)
-
-        # 按 flag 排序（成功在前，失败在后）
-        self.refresh_combo(sort_index=3, reverse=False)
-        # 更新“截图窗口(数量)”
+    def open_region_picker(self):
         try:
-            count = self.combo.count()
-            self.window_label.setText(f"截图窗口({count})")
-        except Exception:
-            pass
+            snapshot, origin = desktop_snapshot()
+            picker = RegionPicker(snapshot, origin, self)
+            if picker.exec_() == picker.Accepted:
+                self.region = picker.bounds
+                self.log_message(f"已选择屏幕区域 {self.region}，采集期间请保持视频可见")
+        except Exception as error:
+            self.log_message(f"读取桌面失败：{error}")
+        finally:
+            self.showNormal()
 
     def log_message(self, msg):
         timestamp = time.strftime("%H:%M:%S")
@@ -320,8 +350,25 @@ class MainApp(QWidget):
         self.update_count_label()
         self.start_time = time.time()
         self.last_image = None
-        self.log_message("开始截图...")
-        self.capture_loop()  # 立即执行一次截图
+        region_mode = self.capture_mode.currentIndex() == 1
+        if region_mode and not self.region:
+            self.log_message("请先点击“框选区域”选择视频画面")
+            return
+        hwnd = self.combo.currentData()
+        if not region_mode and hwnd is None:
+            self.log_message("请先选择窗口")
+            return
+        self.capture_mode.setEnabled(False)
+        self.combo.setEnabled(False)
+        self.widow_refresh_btn.setEnabled(False)
+        self.region_btn.setEnabled(False)
+        if region_mode:
+            self.log_message("开始区域截图，恢复本窗口可停止采集")
+            self.showMinimized()
+            QTimer.singleShot(350, self.capture_if_running)
+        else:
+            self.log_message(f"{self.capture_mode.currentText()}：{self.combo.currentText()} · HWND {hwnd:#x}")
+            self.capture_loop()
         self.timer.start(self.interval_spin.value() * 1000)
         self.start_btn.setVisible(False)
         self.quickshot_btn.setVisible(True)
@@ -330,6 +377,9 @@ class MainApp(QWidget):
 
     def stop_capture(self):
         self.timer.stop()
+        self.discard_background_capture()
+        self.capture_mode.setEnabled(True)
+        self.change_mode(self.capture_mode.currentIndex())
         elapsed = time.time() - self.start_time if self.start_time else 0
         self.log_message(f"截图结束，耗时 {elapsed:.1f} 秒，共保存 {self.capture_count} 张截图")
         self.stop_btn.setVisible(False)
@@ -337,38 +387,72 @@ class MainApp(QWidget):
         self.start_btn.setVisible(True)
         self.ppt_btn.setDisabled(False)
 
+    def capture_if_running(self):
+        if self.timer.isActive():
+            self.capture_loop()
+
     def capture_loop(self):
-        title = self.combo.currentText()
-        hwnd = self.img_manager[title][1]
-        img = capture_window(hwnd)[0]
-        force_capture=False
-        diff_score=0.0
-
-        if img is None or img.size[0] < 30 or img.size[1] < 30:
-            red_color = (255 << 16) | (0 << 8) | 0
-            img = Image.new("RGB", (50, 50), red_color) 
-            # img = Image.new("RGB", (50, 50), (255, 0, 0))
-            self.log_message("截图失败，使用红色占位图")
+        if self.capture_mode.currentIndex() == 0:
+            if self.pending_frame is None:
+                self.pending_frame = self.worker.submit(capture_background, self.combo.currentData())
+                self.poll_frame.start()
+            return
+        if self.capture_mode.currentIndex() == 1:
+            title = "视频区域"
+            try:
+                img = ImageGrab.grab(bbox=self.region, all_screens=True)
+            except OSError as error:
+                self.log_message(f"读取屏幕区域失败：{error}")
+                return
         else:
-            if self.last_image is None:
-                force_capture=True
-            else:
-                diff_score=round(get_diff_score(self.last_image, img),2)
-                force_capture= diff_score > self.diff_threshold.value()
+            title = self.combo.currentText()
+            hwnd = self.combo.currentData()
+            img, status = capture_window(hwnd)
+            if status != "Succeed":
+                self.log_message(f"窗口截图失败，HWND {hwnd:#x}")
+                return
 
-            if force_capture:
-                self.capture_count += 1
-                self.update_count_label()
-                title = title.strip().replace(" ", "_").replace(":", "_")
-                safe_title = re.sub(r'[\\/*?:"<>|]', "_", title)
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                filename = f"{safe_title}_{timestamp}.png"
-                path = os.path.join(self.capture_folder, filename)
-                img.save(path)
-                self.log_message(f"差异大:{diff_score}，保存: {filename}")
-                self.last_image = img
-            else:
-                self.log_message(f"差异小：{diff_score}，未保存")
+        self.process_frame(img, title)
+
+    def discard_background_capture(self):
+        self.poll_frame.stop()
+        if self.pending_frame is not None:
+            self.pending_frame.cancel()
+            self.pending_frame = None
+
+    def finish_background_capture(self):
+        future = self.pending_frame
+        if future is None or not future.done():
+            return
+        self.poll_frame.stop()
+        self.pending_frame = None
+        try:
+            img = future.result()
+        except Exception as error:
+            self.preview.setText("等待后台窗口画面")
+            self.log_message(f"后台窗口采集失败（HWND {self.combo.currentData():#x}）：{error}")
+            return
+        self.process_frame(img, self.combo.currentText())
+
+    def process_frame(self, img, title):
+        score = None
+        if self.last_image is not None and self.last_image.size == img.size:
+            score = round(get_diff_score(self.last_image, img), 2)
+        if score is None or score > self.diff_threshold.value():
+            safe_title = re.sub(r'[\\/*?:"<>|]', "_", title.strip())
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            filename = f"{safe_title}_{timestamp}.png"
+            try:
+                img.save(os.path.join(self.capture_folder, filename))
+            except OSError as error:
+                self.log_message(f"保存失败：{error}")
+                return
+            self.last_image = img
+            self.capture_count += 1
+            self.update_count_label()
+            self.log_message(f"已保存 {filename}")
+        else:
+            self.log_message(f"差异小：{score}，未保存")
 
         pixmap = pil_image_to_qpixmap(img)
         self.preview.setPixmap(pixmap.scaled(400, 300, Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
@@ -452,29 +536,6 @@ class MainApp(QWidget):
         except Exception as e:
             self.log_message(f"在资源管理器中显示失败: {e}")
 
-    def refresh_combo(self, sort_index=3, reverse=False):
-        """
-        按 QComboBox 每项数据元组的某个字段排序并刷新显示
-        :param sort_index: 用于排序的字段索引，例如：
-                        0=title, 1=hwnd, 2=image, 3=flag
-        :param reverse: 是否倒序
-        """
-        # 1. 取出所有条目的 (text, userData) 二元组
-        items_data = []
-        for i in range(self.combo.count()):
-            icon=self.combo.itemIcon(i)
-            text = self.combo.itemText(i)
-            data = self.combo.itemData(i)  # (title, hwnd, image多个, flag)
-            items_data.append((icon,text, data))
-
-        # 2. 按指定字段排序
-        items_data.sort(key=lambda item: item[2][sort_index], reverse=reverse)
-
-        # 3. 重建 QComboBox
-        self.combo.clear()
-        for icon,text, data in items_data:
-            self.combo.addItem(icon,text, data)
-
     def save_settings(self):
         """保存上次参数：截图路径、间隔秒数"""
         try:
@@ -496,7 +557,8 @@ class MainApp(QWidget):
                 self.diff_threshold.setValue(self.settings.value("diff_threshold",type=int))
 
             else:
-                folder = sys.path[0]
+                folder = os.path.join(os.path.expanduser("~"), "Pictures", "ScreenShotToPPT")
+                os.makedirs(folder, exist_ok=True)
                 interval=5
                 self.diff_threshold.setValue(5)
                 self.log_message(f"没找到设置文件,保持默认值")
@@ -514,6 +576,8 @@ class MainApp(QWidget):
 
 
     def closeEvent(self, event):
+        self.discard_background_capture()
+        self.worker.shutdown(wait=False, cancel_futures=True)
         # 退出前保存一次
         self.save_settings()
         super().closeEvent(event)
@@ -533,9 +597,10 @@ class HoverListView(QListView):
             index = self.indexAt(event.pos())
             if index.isValid():
                 title = index.data()
-                pixmap = self.img_manager.get(title)[4]
+                hwnd = index.data(Qt.UserRole)
+                pixmap = self.img_manager.get(hwnd)
                 if pixmap:
-                    self.preview_widget.update_content(title, pixmap)
+                    self.preview_widget.update_content(f"{title} · HWND {hwnd:#x}（GDI 缩略图）", pixmap)
                     # Ensure widget size matches content before moving
                     self.preview_widget.adjustSize()
                     global_pos = self.viewport().mapToGlobal(event.pos())
@@ -600,9 +665,13 @@ class HoverPreview(QWidget):
         self.image_label.adjustSize()
         self.adjustSize()
 
-ctypes.windll.user32.SetProcessDPIAware()
+
 
 if __name__ == "__main__":
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+    except AttributeError:
+        ctypes.windll.user32.SetProcessDPIAware()
     app = QApplication(sys.argv)
     window = MainApp()
     window.show()
